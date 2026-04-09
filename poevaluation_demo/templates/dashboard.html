@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PoEvaluation Demo - Industrial IoT Data Marketplace</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f7fb;
+        }
+        h1, h2 {
+            margin-bottom: 8px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+        .card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        pre {
+            background: #111827;
+            color: #f9fafb;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            max-height: 300px;
+        }
+        .green { color: green; font-weight: bold; }
+        .red { color: red; font-weight: bold; }
+        .summary {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>PoEvaluation Demo: Industrial IoT Data Marketplace</h1>
+    <p>Pre-consensus trust evaluation for permissioned blockchain data admission.</p>
+
+    <div class="card">
+        <label>Anomalous probability:
+            <input type="range" min="0" max="100" value="25" id="anomRange" oninput="anomValue.textContent=this.value + '%'">
+            <span id="anomValue">25%</span>
+        </label>
+        <br><br>
+        <button onclick="submitRecord()">Submit One Record</button>
+        <button onclick="startStream()">Start Stream</button>
+        <button onclick="stopStream()">Stop Stream</button>
+    </div>
+
+    <br>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Latest PoEvaluation Result</h2>
+            <div id="latestResult">No record submitted yet.</div>
+        </div>
+
+        <div class="card">
+            <h2>Accepted vs Rejected</h2>
+            <div id="summary" class="summary">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Evaluations</h2>
+            <pre id="recentEvaluations">Loading...</pre>
+        </div>
+
+        <div class="card">
+            <h2>Blockchain Contents</h2>
+            <pre id="blockchainView">Loading...</pre>
+        </div>
+    </div>
+
+    <script>
+        let streamHandle = null;
+
+        async function submitRecord() {
+            const p = document.getElementById("anomRange").value / 100.0;
+
+            const res = await fetch("/generate", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ anomalous_probability: p })
+            });
+            const data = await res.json();
+
+            const finalClass = data.final_label === "trustworthy"
+                ? '<span class="green">ACCEPTED</span>'
+                : '<span class="red">REJECTED</span>';
+
+            document.getElementById("latestResult").innerHTML = `
+                <p><b>Record ID:</b> ${data.record.record_id}</p>
+                <p><b>Provider:</b> ${data.record.provider}</p>
+                <p><b>Ground Truth:</b> ${data.record.ground_truth}</p>
+                <p><b>Final Decision:</b> ${finalClass}</p>
+                <p><b>Avg Trust Score:</b> ${data.avg_trust_score}</p>
+                <p><b>Avg Confidence:</b> ${data.avg_confidence}</p>
+                <p><b>Evaluator Votes:</b></p>
+                <pre>${JSON.stringify(data.evaluator_results, null, 2)}</pre>
+            `;
+
+            await refreshState();
+        }
+
+        async function refreshState() {
+            const res = await fetch("/state");
+            const data = await res.json();
+
+            document.getElementById("summary").innerHTML = `
+                Accepted: <span class="green">${data.coordinator.accepted_count}</span><br>
+                Rejected: <span class="red">${data.coordinator.rejected_count}</span>
+            `;
+
+            document.getElementById("recentEvaluations").textContent =
+                JSON.stringify(data.coordinator.recent_results, null, 2);
+
+            document.getElementById("blockchainView").textContent =
+                JSON.stringify({
+                    chain: data.chain,
+                    pending: data.pending
+                }, null, 2);
+        }
+
+        function startStream() {
+            if (streamHandle) return;
+            streamHandle = setInterval(submitRecord, 2000);
+        }
+
+        function stopStream() {
+            if (streamHandle) {
+                clearInterval(streamHandle);
+                streamHandle = null;
+            }
+        }
+
+        refreshState();
+        setInterval(refreshState, 3000);
+    </script>
+</body>
+</html>
