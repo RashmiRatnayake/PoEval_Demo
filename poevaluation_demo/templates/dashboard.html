@@ -86,9 +86,42 @@
             const res = await fetch("/state");
             const data = await res.json();
 
+            const acceptedCount = data.coordinator.accepted_count || 0;
+            const rejectedCount = data.coordinator.rejected_count || 0;
+            const totalCount = acceptedCount + rejectedCount;
+            const acceptanceRate = totalCount ? ((acceptedCount / totalCount) * 100).toFixed(1) : "0.0";
+            const rejectionRate = totalCount ? ((rejectedCount / totalCount) * 100).toFixed(1) : "0.0";
+
             document.getElementById("summary").innerHTML = `
-                Accepted: <span class="green">${data.coordinator.accepted_count}</span><br>
-                Rejected: <span class="red">${data.coordinator.rejected_count}</span>
+                <div class="stats-grid">
+                    <div class="stat-box accepted">
+                        <span class="stat-label">Accepted</span>
+                        <span class="stat-value green">${acceptedCount}</span>
+                    </div>
+                    <div class="stat-box rejected">
+                        <span class="stat-label">Rejected</span>
+                        <span class="stat-value red">${rejectedCount}</span>
+                    </div>
+                </div>
+                <div class="rate-card">
+                    <div class="rate-row">
+                        <span>Transaction Acceptance Rate</span>
+                        <strong class="green">${acceptanceRate}%</strong>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill acceptance-fill" style="width:${acceptanceRate}%"></div>
+                    </div>
+                </div>
+                <div class="rate-card">
+                    <div class="rate-row">
+                        <span>Transaction Rejection Rate</span>
+                        <strong class="red">${rejectionRate}%</strong>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill rejection-fill" style="width:${rejectionRate}%"></div>
+                    </div>
+                </div>
+                <div class="total-text">Total evaluated transactions: <b>${totalCount}</b></div>
             `;
 
             document.getElementById("recentEvaluations").textContent =
