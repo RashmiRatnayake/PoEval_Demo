@@ -2,86 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PoEvaluation Demo - Industrial IoT Data Marketplace</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background: #f5f7fb;
-        }
-        h1, h2 {
-            margin-bottom: 8px;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 18px;
-        }
-        .card {
-            background: white;
-            padding: 16px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        button {
-            padding: 10px 16px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-right: 10px;
-        }
-        pre {
-            background: #111827;
-            color: #f9fafb;
-            padding: 12px;
-            border-radius: 8px;
-            overflow-x: auto;
-            max-height: 300px;
-        }
-        .green { color: green; font-weight: bold; }
-        .red { color: red; font-weight: bold; }
-        .summary {
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoEval Demo - Industrial IoT Data Marketplace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>PoEvaluation Demo: Industrial IoT Data Marketplace</h1>
-    <p>Pre-consensus trust evaluation for permissioned blockchain data admission.</p>
+    <div class="container">
+        <div class="hero">
+            <h1>PoEval Demo: Industrial IoT Data Marketplace</h1>
+            <p>Pre-consensus trust evaluation for permissioned blockchain data admission.</p>
+        </div>
 
-    <div class="card">
-        <label>Anomalous probability:
-            <input type="range" min="0" max="100" value="25" id="anomRange" oninput="anomValue.textContent=this.value + '%'">
-            <span id="anomValue">25%</span>
-        </label>
-        <br><br>
-        <button onclick="submitRecord()">Submit One Record</button>
-        <button onclick="startStream()">Start Stream</button>
-        <button onclick="stopStream()">Stop Stream</button>
+        <div class="card controls-card">
+            <label class="range-label">Anomalous probability</label>
+            <div class="controls-row">
+                <input type="range" min="0" max="100" value="25" id="anomRange" oninput="anomValue.textContent=this.value + '%'">
+                <span id="anomValue" class="pill">25%</span>
+            </div>
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="submitRecord()">Submit One Record</button>
+                <button class="btn btn-success" onclick="startStream()">Start Stream</button>
+                <button class="btn btn-danger" onclick="stopStream()">Stop Stream</button>
+            </div>
+        </div>
     </div>
 
-    <br>
+    <div class="container">
+        <div class="grid">
+            <div class="card">
+                <h2>Latest PoEval Result</h2>
+                <div id="latestResult">No record submitted yet.</div>
+            </div>
 
-    <div class="grid">
-        <div class="card">
-            <h2>Latest PoEvaluation Result</h2>
-            <div id="latestResult">No record submitted yet.</div>
-        </div>
+            <div class="card">
+                <h2>Accepted vs Rejected</h2>
+                <div id="summary" class="summary">Loading...</div>
+            </div>
 
-        <div class="card">
-            <h2>Accepted vs Rejected</h2>
-            <div id="summary" class="summary">Loading...</div>
-        </div>
+            <div class="card">
+                <h2>Recent Evaluations</h2>
+                <pre id="recentEvaluations">Loading...</pre>
+            </div>
 
-        <div class="card">
-            <h2>Recent Evaluations</h2>
-            <pre id="recentEvaluations">Loading...</pre>
-        </div>
-
-        <div class="card">
-            <h2>Blockchain Contents</h2>
-            <pre id="blockchainView">Loading...</pre>
+            <div class="card">
+                <h2>Blockchain Contents</h2>
+                <pre id="blockchainView">Loading...</pre>
+            </div>
         </div>
     </div>
 
