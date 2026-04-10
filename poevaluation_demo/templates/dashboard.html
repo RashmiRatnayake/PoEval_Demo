@@ -40,6 +40,35 @@
             </div>
 
             <div class="card">
+                <h2>Model Agreement</h2>
+                <div id="agreementPanel" class="agreement-panel">Loading...</div>
+            </div>
+
+            <div class="card provider-card">
+                <h2>Provider Trust Scores</h2>
+                <div class="provider-controls">
+                    <label>
+                        Filter
+                        <select id="providerFilter" onchange="refreshState()">
+                            <option value="all">All Providers</option>
+                            <option value="highest">Highest Trust Only</option>
+                            <option value="lowest">Lowest Trust Only</option>
+                        </select>
+                    </label>
+                    <label>
+                        Sort
+                        <select id="providerSort" onchange="refreshState()">
+                            <option value="trust_desc">Trust: High to Low</option>
+                            <option value="trust_asc">Trust: Low to High</option>
+                            <option value="name_asc">Name: A to Z</option>
+                            <option value="name_desc">Name: Z to A</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="providerTrustView" class="provider-trust-view">Loading...</div>
+            </div>
+
+            <div class="card">
                 <h2>Recent Evaluations</h2>
                 <pre id="recentEvaluations">Loading...</pre>
             </div>
@@ -85,6 +114,7 @@
         async function refreshState() {
             const res = await fetch("/state");
             const data = await res.json();
+            const recentResults = data.coordinator.recent_results || [];
 
             const acceptedCount = data.coordinator.accepted_count || 0;
             const rejectedCount = data.coordinator.rejected_count || 0;
@@ -123,6 +153,108 @@
                 </div>
                 <div class="total-text">Total evaluated transactions: <b>${totalCount}</b></div>
             `;
+
+            const agreedCount = recentResults.filter(item => {
+                const labels = (item.evaluator_results || []).map(result => result.label);
+                if (!labels.length) return false;
+                return labels.every(label => label === labels[0]);
+            }).length;
+            const agreementTotal = recentResults.length;
+            const disagreementCount = Math.max(agreementTotal - agreedCount, 0);
+            const agreementRate = agreementTotal ? ((agreedCount / agreementTotal) * 100).toFixed(1) : "0.0";
+            const disagreementRate = (100 - Number(agreementRate)).toFixed(1);
+
+            document.getElementById("agreementPanel").innerHTML = `
+                <div class="agreement-layout">
+                    <div class="pie-wrap">
+                        <div class="pie-chart" style="background: conic-gradient(#10b981 0% ${agreementRate}%, #f43f5e ${agreementRate}% 100%);"></div>
+                        <div class="pie-center">${agreementRate}%</div>
+                    </div>
+                    <div class="agreement-legend">
+                        <div class="legend-item">
+                            <span class="legend-dot agree-dot"></span>
+                            <span>Agreement: <b>${agreedCount}</b> (${agreementRate}%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot disagree-dot"></span>
+                            <span>Disagreement: <b>${disagreementCount}</b> (${disagreementRate}%)</span>
+                        </div>
+                        <div class="legend-muted">Based on latest ${agreementTotal} evaluations.</div>
+                    </div>
+                </div>
+            `;
+
+            const providerStats = {};
+            for (const item of recentResults) {
+                const provider = item.record?.provider || "Unknown";
+                if (!providerStats[provider]) {
+                    providerStats[provider] = {
+                        provider,
+                        total: 0,
+                        accepted: 0,
+                        rejected: 0,
+                        trustSum: 0,
+                    };
+                }
+
+                providerStats[provider].total += 1;
+                providerStats[provider].trustSum += Number(item.avg_trust_score || 0);
+
+                if (item.final_label === "trustworthy") {
+                    providerStats[provider].accepted += 1;
+                } else {
+                    providerStats[provider].rejected += 1;
+                }
+            }
+
+            let providerRows = Object.values(providerStats).map(stats => ({
+                ...stats,
+                avgTrust: stats.total ? (stats.trustSum / stats.total) : 0,
+            }));
+
+            const sortMode = document.getElementById("providerSort")?.value || "trust_desc";
+            if (sortMode === "trust_asc") {
+                providerRows.sort((a, b) => a.avgTrust - b.avgTrust);
+            } else if (sortMode === "name_asc") {
+                providerRows.sort((a, b) => a.provider.localeCompare(b.provider));
+            } else if (sortMode === "name_desc") {
+                providerRows.sort((a, b) => b.provider.localeCompare(a.provider));
+            } else {
+                providerRows.sort((a, b) => b.avgTrust - a.avgTrust);
+            }
+
+            const filterMode = document.getElementById("providerFilter")?.value || "all";
+            if (providerRows.length > 0 && filterMode !== "all") {
+                const trustValues = providerRows.map(row => row.avgTrust);
+                const targetTrust = filterMode === "highest"
+                    ? Math.max(...trustValues)
+                    : Math.min(...trustValues);
+                providerRows = providerRows.filter(row => Math.abs(row.avgTrust - targetTrust) < 1e-9);
+            }
+
+            if (!providerRows.length) {
+                document.getElementById("providerTrustView").innerHTML =
+                    '<div class="legend-muted">No provider data yet.</div>';
+            } else {
+                const maxTrust = Math.max(...providerRows.map(row => row.avgTrust), 1);
+                const rowsHtml = providerRows.map(row => {
+                    const trustPct = Math.max(0, Math.min((row.avgTrust / maxTrust) * 100, 100));
+                    return `
+                        <div class="provider-row">
+                            <div class="provider-row-top">
+                                <span class="provider-name">${row.provider}</span>
+                                <span class="provider-score">${row.avgTrust.toFixed(3)}</span>
+                            </div>
+                            <div class="provider-meta">Accepted ${row.accepted} • Rejected ${row.rejected} • Total ${row.total}</div>
+                            <div class="provider-track">
+                                <div class="provider-fill" style="width:${trustPct}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+                document.getElementById("providerTrustView").innerHTML = rowsHtml;
+            }
 
             document.getElementById("recentEvaluations").textContent =
                 JSON.stringify(data.coordinator.recent_results, null, 2);
