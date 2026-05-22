@@ -112,8 +112,8 @@
         let suppressControlEvents = false;
         let providerPage = 1;
         let rejectedPage = 1;
-        const PROVIDER_PAGE_SIZE = 4;
-        const REJECTED_PAGE_SIZE = 6;
+        const PROVIDER_PAGE_SIZE = 3;
+        const REJECTED_PAGE_SIZE = 3;
 
         function onProviderControlsChanged() {
             if (suppressControlEvents) return;
@@ -272,6 +272,17 @@
                 avgTrust: stats.total ? (stats.trustSum / stats.total) : 0,
             }));
 
+            // Apply filter FIRST
+            const filterMode = document.getElementById("providerFilter")?.value || "all";
+            if (providerRows.length > 0 && filterMode !== "all") {
+                const trustValues = providerRows.map(row => row.avgTrust);
+                const targetTrust = filterMode === "highest"
+                    ? Math.max(...trustValues)
+                    : Math.min(...trustValues);
+                providerRows = providerRows.filter(row => Math.abs(row.avgTrust - targetTrust) < 1e-9);
+            }
+
+            // Then apply sort to the filtered results
             const sortMode = document.getElementById("providerSort")?.value || "trust_desc";
             if (sortMode === "trust_asc") {
                 providerRows.sort((a, b) => a.avgTrust - b.avgTrust);
@@ -283,23 +294,15 @@
                 providerRows.sort((a, b) => b.avgTrust - a.avgTrust);
             }
 
-            const filterMode = document.getElementById("providerFilter")?.value || "all";
-            if (providerRows.length > 0 && filterMode !== "all") {
-                const trustValues = providerRows.map(row => row.avgTrust);
-                const targetTrust = filterMode === "highest"
-                    ? Math.max(...trustValues)
-                    : Math.min(...trustValues);
-                providerRows = providerRows.filter(row => Math.abs(row.avgTrust - targetTrust) < 1e-9);
-            }
-
             if (!providerRows.length) {
                 document.getElementById("providerTrustView").innerHTML =
                     '<div class="legend-muted">No provider data yet.</div>';
                 document.getElementById("providerPagination").innerHTML = "";
+                providerPage = 1;
             } else {
                 const maxTrust = Math.max(...providerRows.map(row => row.avgTrust), 1);
                 const providerTotalPages = Math.max(1, Math.ceil(providerRows.length / PROVIDER_PAGE_SIZE));
-                providerPage = Math.min(providerPage, providerTotalPages);
+                providerPage = Math.max(1, Math.min(providerPage, providerTotalPages));
                 const providerStart = (providerPage - 1) * PROVIDER_PAGE_SIZE;
                 const providerPagedRows = providerRows.slice(providerStart, providerStart + PROVIDER_PAGE_SIZE);
 
@@ -332,6 +335,7 @@
             const rejectSearch = (document.getElementById("rejectSearch")?.value || "").trim().toLowerCase();
 
             const rejectedRaw = recentResults.filter(item => item.final_label === "untrustworthy");
+            //const rejectedRaw = data.coordinator.rejected_results || [];
             const providers = [...new Set(rejectedRaw.map(item => item.record?.provider || "Unknown"))].sort((a, b) => a.localeCompare(b));
 
             if (rejectProviderFilter) {
@@ -392,9 +396,10 @@
                 document.getElementById("rejectedLogView").innerHTML =
                     '<div class="legend-muted">No rejected records match the selected filters.</div>';
                 document.getElementById("rejectedPagination").innerHTML = "";
+                rejectedPage = 1;
             } else {
                 const rejectedTotalPages = Math.max(1, Math.ceil(rejectedRows.length / REJECTED_PAGE_SIZE));
-                rejectedPage = Math.min(rejectedPage, rejectedTotalPages);
+                rejectedPage = Math.max(1, Math.min(rejectedPage, rejectedTotalPages));
                 const rejectedStart = (rejectedPage - 1) * REJECTED_PAGE_SIZE;
                 const rejectedPagedRows = rejectedRows.slice(rejectedStart, rejectedStart + REJECTED_PAGE_SIZE);
 

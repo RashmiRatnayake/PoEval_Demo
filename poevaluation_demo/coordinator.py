@@ -65,7 +65,6 @@ def submit_record():
     }
 
     audit_log.insert(0, result)
-    audit_log[:] = audit_log[:50]
 
     return jsonify(result)
 
@@ -75,7 +74,7 @@ def status():
     return jsonify({
         "accepted_count": accepted_count,
         "rejected_count": rejected_count,
-        "recent_results": audit_log[:20],
+        "recent_results": audit_log,
     })
 
 

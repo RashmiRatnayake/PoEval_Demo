@@ -3,13 +3,20 @@ import uuid
 from datetime import datetime
 
 
+PROVIDERS = [
+    "Factory-A", "Factory-B", "Factory-C", "Factory-D", "Factory-E",
+    "Warehouse-1", "Warehouse-2", "Warehouse-3", "Warehouse-4",
+    "Plant-North", "Plant-South", "Plant-East", "Plant-West",
+]
+
+
 def generate_record(anomalous_probability: float = 0.25):
     is_anomalous = random.random() < anomalous_probability
 
     if not is_anomalous:
         record = {
             "record_id": str(uuid.uuid4())[:8],
-            "provider": random.choice(["Factory-A", "Factory-B", "Warehouse-C"]),
+            "provider": random.choice(PROVIDERS),
             "timestamp": datetime.utcnow().isoformat(),
             "temperature": round(random.uniform(20, 28), 2),
             "humidity": round(random.uniform(45, 65), 2),
@@ -22,7 +29,7 @@ def generate_record(anomalous_probability: float = 0.25):
     else:
         record = {
             "record_id": str(uuid.uuid4())[:8],
-            "provider": random.choice(["Factory-A", "Factory-B", "Warehouse-C"]),
+            "provider": random.choice(PROVIDERS),
             "timestamp": datetime.utcnow().isoformat(),
             "temperature": round(random.choice([random.uniform(-15, 0), random.uniform(75, 100)]), 2),
             "humidity": round(random.choice([random.uniform(0, 10), random.uniform(90, 100)]), 2),
