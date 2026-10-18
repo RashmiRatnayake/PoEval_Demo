@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoEval Demo - Industrial IoT Data Marketplace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <h1>PoEval Demo: Industrial IoT Data Marketplace</h1>
+            <p>Pre-consensus trust evaluation for permissioned blockchain data admission.</p>
+        </div>
+
+        <div class="card controls-card">
+            <label class="range-label">Untrustworthy Data Probability</label>
+            <div class="controls-row">
+                <input type="range" min="0" max="100" value="25" id="anomRange" oninput="anomValue.textContent=this.value + '%'">
+                <span id="anomValue" class="pill">25%</span>
+            </div>
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="submitRecord()">Submit One Record</button>
+                <button class="btn btn-success" onclick="startStream()">Start Stream</button>
+                <button class="btn btn-danger" onclick="stopStream()">Stop Stream</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="grid">
+            <div class="card">
+                <h2>Latest PoEval Result</h2>
+                <div id="latestResult">No record submitted yet.</div>
+            </div>
+
+            <div class="card">
+                <h2>Accepted vs Rejected</h2>
+                <div id="summary" class="summary">Loading...</div>
+                <h3 class="subsection-title">Model Agreement</h3>
+                <div id="agreementPanel" class="agreement-panel">Loading...</div>
+            </div>
+
+            <div class="card provider-card">
+                <h2>Provider Trust Scores</h2>
+                <div class="provider-controls">
+                    <label>
+                        Filter
+                        <select id="providerFilter" onchange="onProviderControlsChanged()">
+                            <option value="all">All Providers</option>
+                            <option value="highest">Highest Trust Only</option>
+                            <option value="lowest">Lowest Trust Only</option>
+                        </select>
+                    </label>
+                    <label>
+                        Sort
+                        <select id="providerSort" onchange="onProviderControlsChanged()">
+                            <option value="trust_desc">Trust: High to Low</option>
+                            <option value="trust_asc">Trust: Low to High</option>
+                            <option value="name_asc">Name: A to Z</option>
+                            <option value="name_desc">Name: Z to A</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="providerTrustView" class="provider-trust-view">Loading...</div>
+                <div id="providerPagination" class="pagination-wrap"></div>
+            </div>
+
+            <div class="card">
+                <h2>Recent Evaluations</h2>
+                <pre id="recentEvaluations">Loading...</pre>
+            </div>
+
+            <div class="card">
+                <h2>Blockchain Contents</h2>
+                <pre id="blockchainView">Loading...</pre>
+            </div>
+
+            <div class="card provider-card">
+                <h2>Rejected Data Log</h2>
+                <div class="rejected-controls">
+                    <label>
+                        Provider
+                        <select id="rejectProviderFilter" onchange="onRejectedControlsChanged()">
+                            <option value="all">All Providers</option>
+                        </select>
+                    </label>
+                    <label>
+                        Sort
+                        <select id="rejectSort" onchange="onRejectedControlsChanged()">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="lowest_trust">Lowest Trust First</option>
+                            <option value="highest_uncertainty">Highest Uncertainty First</option>
+                        </select>
+                    </label>
+                    <label>
+                        Search
+                        <input id="rejectSearch" type="text" placeholder="Record ID" oninput="onRejectedControlsChanged()">
+                    </label>
+                </div>
+                <div id="rejectedLogSummary" class="legend-muted">Loading...</div>
+                <div id="rejectedLogView" class="rejected-log-view">Loading...</div>
+                <div id="rejectedPagination" class="pagination-wrap"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let streamHandle = null;
+        let latestStateData = null;
+        let suppressControlEvents = false;
+        let providerPage = 1;
+        let rejectedPage = 1;
+        const PROVIDER_PAGE_SIZE = 3;
+        const REJECTED_PAGE_SIZE = 3;
+
+        function onProviderControlsChanged() {
+            if (suppressControlEvents) return;
+            providerPage = 1;
+            renderDashboard();
+        }
+
+        function onRejectedControlsChanged() {
+            if (suppressControlEvents) return;
+            rejectedPage = 1;
+            renderDashboard();
+        }
+
+        function changeProviderPage(delta) {
+            providerPage = Math.max(1, providerPage + delta);
+            renderDashboard();
+        }
+
+        function changeRejectedPage(delta) {
+            rejectedPage = Math.max(1, rejectedPage + delta);
+            renderDashboard();
+        }
+
+        async function submitRecord() {
+            const p = document.getElementById("anomRange").value / 100.0;
+
+            const res = await fetch("/generate", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ anomalous_probability: p })
+            });
+            const data = await res.json();
+
+            const finalClass = data.final_label === "trustworthy"
+                ? '<span class="green">ACCEPTED</span>'
+                : '<span class="red">REJECTED</span>';
+
+            document.getElementById("latestResult").innerHTML = `
+                <p><b>Record ID:</b> ${data.record.record_id}</p>
+                <p><b>Provider:</b> ${data.record.provider}</p>
+                <p><b>Ground Truth:</b> ${data.record.ground_truth}</p>
+                <p><b>Final Decision:</b> ${finalClass}</p>
+                <p><b>Avg Trust Score:</b> ${data.avg_trust_score}</p>
+                <p><b>Avg Confidence:</b> ${data.avg_confidence}</p>
+                <p><b>Evaluator Votes:</b></p>
+                <pre>${JSON.stringify(data.evaluator_results, null, 2)}</pre>
+            `;
+
+            await refreshState();
+        }
+
+        async function refreshState() {
+            const res = await fetch("/state");
+            latestStateData = await res.json();
+            renderDashboard();
+        }
+
+        function renderDashboard() {
+            if (!latestStateData) return;
+            const data = latestStateData;
+            const recentResults = data.coordinator.recent_results || [];
+
+            const acceptedCount = data.coordinator.accepted_count || 0;
+            const rejectedCount = data.coordinator.rejected_count || 0;
+            const totalCount = acceptedCount + rejectedCount;
+            const acceptanceRate = totalCount ? ((acceptedCount / totalCount) * 100).toFixed(1) : "0.0";
+            const rejectionRate = totalCount ? ((rejectedCount / totalCount) * 100).toFixed(1) : "0.0";
+
+            document.getElementById("summary").innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-box accepted">
+                        <span class="stat-label">Accepted</span>
+                        <span class="stat-value green">${acceptedCount}</span>
+                    </div>
+                    <div class="stat-box rejected">
+                        <span class="stat-label">Rejected</span>
+                        <span class="stat-value red">${rejectedCount}</span>
+                    </div>
+                </div>
+                <div class="rate-card">
+                    <div class="rate-row">
+                        <span>Transaction Acceptance Rate</span>
+                        <strong class="green">${acceptanceRate}%</strong>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill acceptance-fill" style="width:${acceptanceRate}%"></div>
+                    </div>
+                </div>
+                <div class="rate-card">
+                    <div class="rate-row">
+                        <span>Transaction Rejection Rate</span>
+                        <strong class="red">${rejectionRate}%</strong>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill rejection-fill" style="width:${rejectionRate}%"></div>
+                    </div>
+                </div>
+                <div class="total-text">Total evaluated transactions: <b>${totalCount}</b></div>
+            `;
+
+            const agreedCount = recentResults.filter(item => {
+                const labels = (item.evaluator_results || []).map(result => result.label);
+                if (!labels.length) return false;
+                return labels.every(label => label === labels[0]);
+            }).length;
+            const agreementTotal = recentResults.length;
+            const disagreementCount = Math.max(agreementTotal - agreedCount, 0);
+            const agreementRate = agreementTotal ? ((agreedCount / agreementTotal) * 100).toFixed(1) : "0.0";
+            const disagreementRate = (100 - Number(agreementRate)).toFixed(1);
+
+            document.getElementById("agreementPanel").innerHTML = `
+                <div class="agreement-layout">
+                    <div class="pie-wrap">
+                        <div class="pie-chart" style="background: conic-gradient(#10b981 0% ${agreementRate}%, #f43f5e ${agreementRate}% 100%);"></div>
+                        <div class="pie-center">${agreementRate}%</div>
+                    </div>
+                    <div class="agreement-legend">
+                        <div class="legend-item">
+                            <span class="legend-dot agree-dot"></span>
+                            <span>Agreement: <b>${agreedCount}</b> (${agreementRate}%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot disagree-dot"></span>
+                            <span>Disagreement: <b>${disagreementCount}</b> (${disagreementRate}%)</span>
+                        </div>
+                        <div class="legend-muted">Based on latest ${agreementTotal} evaluations.</div>
+                    </div>
+                </div>
+            `;
+
+            const providerStats = {};
+            for (const item of recentResults) {
+                const provider = item.record?.provider || "Unknown";
+                if (!providerStats[provider]) {
+                    providerStats[provider] = {
+                        provider,
+                        total: 0,
+                        accepted: 0,
+                        rejected: 0,
+                        trustSum: 0,
+                    };
+                }
+
+                providerStats[provider].total += 1;
+                providerStats[provider].trustSum += Number(item.avg_trust_score || 0);
+
+                if (item.final_label === "trustworthy") {
+                    providerStats[provider].accepted += 1;
+                } else {
+                    providerStats[provider].rejected += 1;
+                }
+            }
+
+            let providerRows = Object.values(providerStats).map(stats => ({
+                ...stats,
+                avgTrust: stats.total ? (stats.trustSum / stats.total) : 0,
+            }));
+
+            // Apply filter FIRST
+            const filterMode = document.getElementById("providerFilter")?.value || "all";
+            if (providerRows.length > 0 && filterMode !== "all") {
+                const trustValues = providerRows.map(row => row.avgTrust);
+                const targetTrust = filterMode === "highest"
+                    ? Math.max(...trustValues)
+                    : Math.min(...trustValues);
+                providerRows = providerRows.filter(row => Math.abs(row.avgTrust - targetTrust) < 1e-9);
+            }
+
+            // Then apply sort to the filtered results
+            const sortMode = document.getElementById("providerSort")?.value || "trust_desc";
+            if (sortMode === "trust_asc") {
+                providerRows.sort((a, b) => a.avgTrust - b.avgTrust);
+            } else if (sortMode === "name_asc") {
+                providerRows.sort((a, b) => a.provider.localeCompare(b.provider));
+            } else if (sortMode === "name_desc") {
+                providerRows.sort((a, b) => b.provider.localeCompare(a.provider));
+            } else {
+                providerRows.sort((a, b) => b.avgTrust - a.avgTrust);
+            }
+
+            if (!providerRows.length) {
+                document.getElementById("providerTrustView").innerHTML =
+                    '<div class="legend-muted">No provider data yet.</div>';
+                document.getElementById("providerPagination").innerHTML = "";
+                providerPage = 1;
+            } else {
+                const maxTrust = Math.max(...providerRows.map(row => row.avgTrust), 1);
+                const providerTotalPages = Math.max(1, Math.ceil(providerRows.length / PROVIDER_PAGE_SIZE));
+                providerPage = Math.max(1, Math.min(providerPage, providerTotalPages));
+                const providerStart = (providerPage - 1) * PROVIDER_PAGE_SIZE;
+                const providerPagedRows = providerRows.slice(providerStart, providerStart + PROVIDER_PAGE_SIZE);
+
+                const rowsHtml = providerPagedRows.map(row => {
+                    const trustPct = Math.max(0, Math.min((row.avgTrust / maxTrust) * 100, 100));
+                    return `
+                        <div class="provider-row">
+                            <div class="provider-row-top">
+                                <span class="provider-name">${row.provider}</span>
+                                <span class="provider-score">${row.avgTrust.toFixed(3)}</span>
+                            </div>
+                            <div class="provider-meta">Accepted ${row.accepted} • Rejected ${row.rejected} • Total ${row.total}</div>
+                            <div class="provider-track">
+                                <div class="provider-fill" style="width:${trustPct}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+                document.getElementById("providerTrustView").innerHTML = rowsHtml;
+                document.getElementById("providerPagination").innerHTML = `
+                    <button class="page-btn" onclick="changeProviderPage(-1)" ${providerPage <= 1 ? "disabled" : ""}>Prev</button>
+                    <span class="page-info">Page ${providerPage} of ${providerTotalPages}</span>
+                    <button class="page-btn" onclick="changeProviderPage(1)" ${providerPage >= providerTotalPages ? "disabled" : ""}>Next</button>
+                `;
+            }
+
+            const rejectProviderFilter = document.getElementById("rejectProviderFilter");
+            const rejectSort = document.getElementById("rejectSort")?.value || "newest";
+            const rejectSearch = (document.getElementById("rejectSearch")?.value || "").trim().toLowerCase();
+
+            const rejectedRaw = recentResults.filter(item => item.final_label === "untrustworthy");
+            //const rejectedRaw = data.coordinator.rejected_results || [];
+            const providers = [...new Set(rejectedRaw.map(item => item.record?.provider || "Unknown"))].sort((a, b) => a.localeCompare(b));
+
+            if (rejectProviderFilter) {
+                const previousValue = rejectProviderFilter.value || "all";
+                suppressControlEvents = true;
+                rejectProviderFilter.innerHTML = `
+                    <option value="all">All Providers</option>
+                    ${providers.map(provider => `<option value="${provider}">${provider}</option>`).join("")}
+                `;
+                rejectProviderFilter.value = providers.includes(previousValue) || previousValue === "all"
+                    ? previousValue
+                    : "all";
+                suppressControlEvents = false;
+            }
+
+            const selectedProvider = rejectProviderFilter?.value || "all";
+
+            let rejectedRows = rejectedRaw.map(item => {
+                const votes = item.evaluator_results || [];
+                const avgUncertainty = votes.length
+                    ? votes.reduce((sum, vote) => sum + Number(vote.uncertainty || 0), 0) / votes.length
+                    : 0;
+                const untrustVotes = votes.filter(vote => vote.label === "untrustworthy").length;
+
+                return {
+                    ...item,
+                    timestamp: item.record?.timestamp || "",
+                    provider: item.record?.provider || "Unknown",
+                    avgUncertainty,
+                    untrustVotes,
+                };
+            });
+
+            if (selectedProvider !== "all") {
+                rejectedRows = rejectedRows.filter(item => item.provider === selectedProvider);
+            }
+
+            if (rejectSearch) {
+                rejectedRows = rejectedRows.filter(item =>
+                    (item.record?.record_id || "").toLowerCase().includes(rejectSearch)
+                );
+            }
+
+            if (rejectSort === "oldest") {
+                rejectedRows.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+            } else if (rejectSort === "lowest_trust") {
+                rejectedRows.sort((a, b) => Number(a.avg_trust_score || 0) - Number(b.avg_trust_score || 0));
+            } else if (rejectSort === "highest_uncertainty") {
+                rejectedRows.sort((a, b) => b.avgUncertainty - a.avgUncertainty);
+            } else {
+                rejectedRows.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+            }
+
+            const rejectedSummary = `Showing ${rejectedRows.length} rejected records`;
+            document.getElementById("rejectedLogSummary").textContent = rejectedSummary;
+
+            if (!rejectedRows.length) {
+                document.getElementById("rejectedLogView").innerHTML =
+                    '<div class="legend-muted">No rejected records match the selected filters.</div>';
+                document.getElementById("rejectedPagination").innerHTML = "";
+                rejectedPage = 1;
+            } else {
+                const rejectedTotalPages = Math.max(1, Math.ceil(rejectedRows.length / REJECTED_PAGE_SIZE));
+                rejectedPage = Math.max(1, Math.min(rejectedPage, rejectedTotalPages));
+                const rejectedStart = (rejectedPage - 1) * REJECTED_PAGE_SIZE;
+                const rejectedPagedRows = rejectedRows.slice(rejectedStart, rejectedStart + REJECTED_PAGE_SIZE);
+
+                const rejectedHtml = rejectedPagedRows.map(item => `
+                    <div class="rejected-item">
+                        <div class="rejected-top">
+                            <div>
+                                <div class="rejected-id">${item.record?.record_id || "N/A"}</div>
+                                <div class="rejected-provider">${item.provider} • ${item.timestamp || "-"}</div>
+                            </div>
+                            <span class="rejected-badge">REJECTED</span>
+                        </div>
+                        <div class="rejected-metrics">
+                            <span class="metric-chip">Trust ${Number(item.avg_trust_score || 0).toFixed(3)}</span>
+                            <span class="metric-chip">Confidence ${Number(item.avg_confidence || 0).toFixed(3)}</span>
+                            <span class="metric-chip">Uncertainty ${Number(item.avgUncertainty || 0).toFixed(3)}</span>
+                            <span class="metric-chip">Untrust Votes ${item.untrustVotes}/3</span>
+                        </div>
+                        <div class="sensor-row">
+                            <span>T ${item.record?.temperature ?? "-"}°C</span>
+                            <span>H ${item.record?.humidity ?? "-"}%</span>
+                            
+                        </div>
+                    </div>
+                `).join("");
+
+                document.getElementById("rejectedLogView").innerHTML = rejectedHtml;
+                document.getElementById("rejectedPagination").innerHTML = `
+                    <button class="page-btn" onclick="changeRejectedPage(-1)" ${rejectedPage <= 1 ? "disabled" : ""}>Prev</button>
+                    <span class="page-info">Page ${rejectedPage} of ${rejectedTotalPages}</span>
+                    <button class="page-btn" onclick="changeRejectedPage(1)" ${rejectedPage >= rejectedTotalPages ? "disabled" : ""}>Next</button>
+                `;
+            }
+
+            document.getElementById("recentEvaluations").textContent =
+                JSON.stringify(data.coordinator.recent_results, null, 2);
+
+            document.getElementById("blockchainView").textContent =
+                JSON.stringify({
+                    chain: data.chain,
+                    pending: data.pending
+                }, null, 2);
+        }
+
+        function startStream() {
+            if (streamHandle) return;
+            streamHandle = setInterval(submitRecord, 2000);
+        }
+
+        function stopStream() {
+            if (streamHandle) {
+                clearInterval(streamHandle);
+                streamHandle = null;
+            }
+        }
+
+        refreshState();
+        setInterval(refreshState, 3000);
+    </script>
+</body>
+</html>
